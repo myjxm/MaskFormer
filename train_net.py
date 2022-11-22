@@ -58,7 +58,16 @@ class Trainer(DefaultTrainer):
         if output_folder is None:
             output_folder = os.path.join(cfg.OUTPUT_DIR, "inference")
         evaluator_list = []
+        print("##########################")
+        print("##########################")
+        print("##########################")
+        print("##########################")
+        print("##########################")
+        print("##########################")
+
+        print(dataset_name)
         evaluator_type = MetadataCatalog.get(dataset_name).evaluator_type
+        print(evaluator_type)
         if evaluator_type in ["sem_seg", "ade20k_panoptic_seg"]:
             evaluator_list.append(
                 SemSegEvaluator(

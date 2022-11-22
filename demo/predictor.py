@@ -34,7 +34,8 @@ class VisualizationDemo(object):
             num_gpu = torch.cuda.device_count()
             self.predictor = AsyncPredictor(cfg, num_gpus=num_gpu)
         else:
-            self.predictor = DefaultPredictor(cfg)
+            self.predictor= DefaultPredictor(cfg)
+        self.model = self.predictor.model
 
     def run_on_image(self, image):
         """

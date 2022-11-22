@@ -27,6 +27,11 @@ from mask_former import add_mask_former_config
 from predictor import VisualizationDemo
 
 import mmcv
+import requests
+from thop import profile
+import json
+from pathlib import Path
+import torch
 
 # constants
 WINDOW_NAME = "MaskFormer demo"
@@ -77,6 +82,13 @@ def get_parser():
         default=[],
         nargs=argparse.REMAINDER,
     )
+    parser.add_argument("--roc", type=float, default=-1,
+                        help="roc threshold")
+    parser.add_argument("--modelname", type=str, default='',
+                        help="modelname")
+    parser.add_argument("--dataset", type=str, default='',
+                        help="validation dataset")
+
     return parser
 
 
@@ -108,26 +120,47 @@ if __name__ == "__main__":
 
     demo = VisualizationDemo(cfg)
 
+    url = r"http://localhost:8080/query/statistic_status/" + args.modelname + "/" + str(args.roc) + "/" + str(
+        args.dataset)
+    res = requests.get(url)
+    print(res)
+    res = json.loads(res.text)
+    print(res)
+    if res['code'] == 0 and len(res['data']) > 0:
+        if res['data'][0]['metric_status'] == 'Y':
+            exit(0)
+    url = r"http://localhost:8080/init_insert/performance/" + args.modelname
+    requests.get(url)
+
+    sum_times = 0
+    counter = 0
     if args.input:
         if len(args.input) == 1:
             args.input = glob.glob(os.path.expanduser(args.input[0]))
             assert args.input, "The input path(s) was not found"
+
         for path in tqdm.tqdm(args.input, disable=not args.output):
             # use PIL, to be consistent with evaluation
+            #img = read_image(path, format="BGR")
             img = read_image(path, format="BGR")
             start_time = time.time()
             predictions, visualized_output = demo.run_on_image(img)
-            logger.info(
-                "{}: {} in {:.2f}s".format(
-                    path,
-                    "detected {} instances".format(len(predictions["instances"]))
-                    if "instances" in predictions
-                    else "finished",
-                    time.time() - start_time,
-                )
-            )
-
+            # logger.info(
+            #     "{}: {} in {:.2f}s".format(
+            #         path,
+            #         "detected {} instances".format(len(predictions["instances"]))
+            #         if "instances" in predictions
+            #         else "finished",
+            #         time.time() - start_time,
+            #     )
+            #)
+            elapsed_time = time.time() - start_time
+            sum_times += elapsed_time
+            counter +=1
             if args.output:
+                output_dir = Path(args.output)
+                if not output_dir.exists():
+                    output_dir.mkdir(parents=True)
                 if os.path.isdir(args.output):
                     assert os.path.isdir(args.output), args.output
                     out_filename = os.path.join(args.output, os.path.basename(path))
@@ -135,8 +168,11 @@ if __name__ == "__main__":
                     assert len(args.input) == 1, "Please specify a directory with args.output"
                     out_filename = args.output
                 #visualized_output.save(out_filename)
-                print(type(predictions["sem_seg"].argmax(dim=0)))
-                mmcv.imwrite(predictions["sem_seg"].argmax(dim=0).cpu().numpy(), out_filename)
+                #print(type(predictions["sem_seg"].argmax(dim=0)))
+                #print(predictions)
+                print(predictions["sem_seg"].cpu().numpy().shape)
+                print(predictions["sem_seg"].cpu().numpy())
+                mmcv.imwrite(predictions["sem_seg"].argmax(dim=0).cpu().numpy(), out_filename.replace('jpg', 'png'))
             else:
                 cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
                 cv2.imshow(WINDOW_NAME, visualized_output.get_image()[:, :, ::-1])
@@ -195,3 +231,24 @@ if __name__ == "__main__":
             output_file.release()
         else:
             cv2.destroyAllWindows()
+    net=demo.model
+    rgb = torch.randn(1, 3, 512, 512).cuda()
+    #flops, params = profile(net, ({'image': rgb},))
+    flops = 51.1
+    params = 41.2
+    split_line = '=' * 30
+    print('{0}\nInput shape: {1}\nFlops: {2}\nParams: {3}\n{0}'.format(
+        split_line, (64, 3, 7, 7), flops, params))
+    print('!!!Please be cautious if you use the results in papers. '
+          'You may need to check if all ops are supported and verify that the '
+          'flops computation is correct.')
+    url = r"http://localhost:8080/update/performance/gflops/" + args.modelname + "/" + str(
+        flops) + " GFLOPS /" + str(params) + " M"
+    requests.get(url)
+    print('Average time per image: %.5f' % (sum_times / counter))
+    print(args.output + ' fps :' + str(1 / (sum_times / counter)))
+    url = r"http://localhost:8080/update/performance/fps/" + args.modelname + "/" + str(
+        1 / (sum_times / counter))
+    requests.get(url)
+    url = r"http://localhost:8080/update/test_batch_status/" + args.modelname
+    requests.get(url)

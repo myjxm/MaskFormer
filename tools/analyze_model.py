@@ -54,6 +54,10 @@ def do_flop(cfg):
         data_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0])
         model = build_model(cfg)
         DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
+        print("########")
+        print("########")
+        print("########")
+
     else:
         data_loader = instantiate(cfg.dataloader.test)
         model = instantiate(cfg.model)
